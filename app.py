@@ -1,77 +1,79 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Emoji AI</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .card { border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-        canvas { border: 2px solid #ddd; border-radius: 10px; cursor: crosshair; }
-        .result-emoji { font-size: 4rem; }
-    </style>
-</head>
-<body>
-    <div class="container py-5">
-        <div class="card p-4 text-center">
-            <h1>🎨 AI Nhận diện Emoji</h1>
-            <p class="text-muted">Vẽ lên khung trắng</p>
-            
-            <canvas id="canvas" width="280" height="280" class="mx-auto" style="background: white;"></canvas><br>
-            <button class="btn btn-danger" onclick="clearCanvas()">🗑️ Xóa</button>
-            <button class="btn btn-primary" onclick="predict()">🔍 Dự đoán</button>
-            
-            <div id="result" class="mt-4" style="display: none;">
-                <div class="alert alert-success">
-                    <div class="result-emoji" id="emoji"></div>
-                    <h3 id="className"></h3>
-                    <p id="confidence"></p>
-                </div>
-            </div>
-        </div>
-    </div>
+import streamlit as st
+import cv2
+import numpy as np
+from keras.models import load_model
+from PIL import Image
 
-    <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        let drawing = false;
-        
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 15;
-        
-        canvas.addEventListener('mousedown', () => drawing = true);
-        canvas.addEventListener('mouseup', () => drawing = false);
-        canvas.addEventListener('mousemove', (e) => {
-            if (!drawing) return;
-            const rect = canvas.getBoundingClientRect();
-            ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-        });
-        
-        function clearCanvas() {
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.beginPath();
-            document.getElementById('result').style.display = 'none';
-        }
-        
-        async function predict() {
-            const dataURL = canvas.toDataURL('image/png');
-            const response = await fetch('/predict', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({image: dataURL})
-            });
-            const data = await response.json();
-            
-            document.getElementById('emoji').innerHTML = data.emoji;
-            document.getElementById('className').innerHTML = data.class;
-            document.getElementById('confidence').innerHTML = `Độ tin cậy: ${(data.confidence*100).toFixed(1)}%`;
-            document.getElementById('result').style.display = 'block';
-        }
-    </script>
-</body>
-</html>
+st.set_page_config(page_title="Emoji AI", page_icon="🎨", layout="centered")
+
+# CSS riêng, để nguyên string
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+    }
+    .main-title {
+        text-align: center;
+        color: white;
+        font-size: 3rem;
+        margin-bottom: 0;
+    }
+    .subtitle {
+        text-align: center;
+        color: #e0e0e0;
+        margin-bottom: 2rem;
+    }
+    .result-box {
+        background: rgba(255,255,255,0.95);
+        border-radius: 20px;
+        padding: 1.5rem;
+        text-align: center;
+        margin-top: 2rem;
+    }
+    .emoji-big {
+        font-size: 5rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown('<h1 class="main-title">🎨 AI Nhận diện Emoji</h1>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Vẽ tay – Nhận diện thông minh</p>', unsafe_allow_html=True)
+
+@st.cache_resource
+def load_emoji_model():
+    return load_model('emoji_modelqh.h5')
+
+model = load_emoji_model()
+classes = ["☁️ Cloud", "👍 Thumb", "❤️ Heart", "😈 Smiling Horns", "😃 Grinning Face"]
+
+uploaded_file = st.file_uploader("Chọn ảnh vẽ tay", type=["png", "jpg", "jpeg"])
+
+if uploaded_file is not None:
+    img = Image.open(uploaded_file).convert('L')
+    img = img.resize((28, 28))
+    img_array = np.array(img)
+    img_array = 255 - img_array
+    img_array = img_array.reshape(1, 784).astype('float32') / 255.0
+    
+    pred = model.predict(img_array, verbose=0)
+    idx = np.argmax(pred[0])
+    confidence = pred[0][idx]
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.image(uploaded_file, caption="Ảnh bạn vừa tải", width=200)
+    with col2:
+        st.markdown(
+            f"""
+            <div class="result-box">
+                <div class="emoji-big">{classes[idx].split()[0]}</div>
+                <h2>{classes[idx]}</h2>
+                <p>Độ tin cậy: <strong>{confidence*100:.1f}%</strong></p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
